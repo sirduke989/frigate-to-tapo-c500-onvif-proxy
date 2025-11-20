@@ -1,0 +1,20 @@
+services:
+  onvif-proxy:
+    build: .
+    container_name: onvif-proxy
+    restart: no
+    #restart: unless-stopped
+    ports:
+      - "2021:2021"
+      - "2022:2022"
+    volumes:
+      - ./config:/app/config
+    networks:
+      - onvif-network
+    # Uncomment if you want to use host network mode instead
+    # This can be useful for network discovery
+    # network_mode: host
+
+networks:
+  onvif-network:
+    driver: bridge

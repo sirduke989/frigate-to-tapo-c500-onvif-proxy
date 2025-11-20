@@ -1,0 +1,24 @@
+# ONVIF Proxy cameras configuration (YAML)
+#
+# Top-level `proxy_host` sets the host/address the proxy servers should bind to.
+# Each camera entry in `cameras` defines the camera target and proxy port.
+#
+# Example:
+proxy_host: 0.0.0.0
+cameras:
+  - name: Front Yard Cam
+    camera_host: 192.168.1.80
+    camera_port: 2020
+    proxy_port: 2021
+# Multipliers can be set to a value from -1 to 1 to adjust how far the camera moves
+# Negative values will invert the direction of movement
+    x_multiplier: 0.2
+    y_multiplier: -0.6
+    move_timeout: 30   #Optional default timeout 
+
+  - name: Back Yard Cam
+    camera_host: 192.168.1.81
+    camera_port: 2020
+    proxy_port: 2022
+    x_multiplier: 0.2
+    y_multiplier: -0.6

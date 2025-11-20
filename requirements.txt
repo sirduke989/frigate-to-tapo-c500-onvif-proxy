@@ -1,0 +1,11 @@
+# Web framework for proxy server
+Flask==3.1.2
+
+# XML processing for SOAP messages
+lxml==5.1.0
+
+# HTTP requests (dependency of zeep)
+requests==2.32.3
+
+# YAML parsing for configuration files
+pyyaml==6.0.1

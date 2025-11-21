@@ -104,20 +104,74 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
     # Root status page
     @app.route('/')
     def status_page():
-        # Compose HTML status for all cameras (if available)
-        html = ['<html><head><title>ONVIF Proxy Status</title></head><body>']
-        html.append(f'<h1>ONVIF Proxy Status - {camera_config["name"]}</h1>')
-        html.append('<ul>')
-        # If all_camera_configs is provided, show all, else just this one
+        # Render a nicer HTML status page with cards and example Frigate snippet
         cam_list = all_camera_configs.get('cameras') if isinstance(all_camera_configs, dict) else [camera_config]
         global_host = all_camera_configs.get('proxy_host') if isinstance(all_camera_configs, dict) else '127.0.0.1'
-        for cam in cam_list:
-            url = f"http://{global_host}:{cam['proxy_port']}/onvif/"
-            html.append(f'<li><b>{cam["name"]}</b>: <a href="{url}">{url}</a> &rarr; {cam["camera_host"]}:{cam["camera_port"]}</li>')
-        html.append('</ul>')
-        html.append('</body></html>')
-        return '\n'.join(html)
 
+        css = '''
+        body { font-family: Arial, sans-serif; background: #f7f9fb; color: #222; }
+        .container { max-width: 1100px; margin: 24px auto; }
+        h1 { margin-bottom: 8px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+        .card { background: white; border: 1px solid #e1e6ea; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(16,24,40,0.03); }
+        .card h2 { margin: 0 0 8px 0; font-size: 18px; }
+        .meta { font-size: 13px; color: #4b5563; margin-bottom: 8px; }
+        .status { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+        .status.idle { background: #eef2ff; color: #4f46e5; }
+        .status.moving { background: #fff7ed; color: #b45309; }
+        pre.snippet { background: #0b1220; color: #cbd5e1; padding: 12px; border-radius: 6px; overflow: auto; }
+        .footer { margin-top: 18px; font-size: 13px; color: #6b7280; }
+        '''
+
+        cards = []
+        for cam in cam_list:
+            name = cam.get('name')
+            port = cam.get('proxy_port')
+            proxy_url = f"http://{global_host}:{port}/onvif/"
+            target = f"{cam.get('camera_host')}:{port}"
+            status = cam.get('status', 'IDLE')
+            status_class = 'moving' if status.upper() == 'MOVING' else 'idle'
+            move_timeout = cam.get('move_timeout', '30s')
+            card = f'''
+            <div class="card">
+                <h2>{name}</h2>
+                <div class="meta">Proxy URL: <a href="{proxy_url}">{proxy_url}</a></div>
+                <div class="meta">Camera target: {target}</div>
+                <div class="meta">Move timeout: {move_timeout}</div>
+                <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
+                <h3 style="margin-top:20px;">Example Frigate configuration</h3>
+                <p class="footer">Add this to your Frigate config.yml:</p>
+                <pre class="snippet">
+cameras:
+  {name}:
+    onvif:
+    host: {global_host}
+    port: {port}
+    username: camera_user
+    password: camera_pass                
+                </pre>
+            </div>
+            '''
+            cards.append(card)
+        html = f"""
+        <html>
+        <head>
+            <title>ONVIF Proxy Status</title>
+            <style>{css}</style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>ONVIF Proxy Status</h1>
+                <p class="footer">Proxy host: <strong>{global_host}</strong></p>
+                <div class="grid">
+                    {''.join(cards)}
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        return html
     return app
 
 def load_camera_configs(config_path):

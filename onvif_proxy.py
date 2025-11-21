@@ -119,6 +119,8 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         .status { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
         .status.idle { background: #eef2ff; color: #4f46e5; }
         .status.moving { background: #fff7ed; color: #b45309; }
+        .status.running { background: #eef2ff; color: #4f46e5; }
+        .status.stopped { background: #fff7ed; color: #b45309; }
         pre.snippet { background: #0b1220; color: #cbd5e1; padding: 12px; border-radius: 6px; overflow: auto; }
         .footer { margin-top: 18px; font-size: 13px; color: #6b7280; }
         '''
@@ -132,12 +134,23 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
             status = cam.get('status', 'IDLE')
             status_class = 'moving' if status.upper() == 'MOVING' else 'idle'
             move_timeout = cam.get('move_timeout', '30s')
+            # Thread running status (if main attached a thread object to the camera config)
+            thread_obj = cam.get('_thread')
+            is_running = False
+            try:
+                if thread_obj is not None:
+                    is_running = bool(getattr(thread_obj, 'is_alive', lambda: False)())
+            except Exception:
+                is_running = False
+            running_class = 'running' if is_running else 'stopped'
+            running_text = 'Running' if is_running else 'Stopped'
             card = f'''
             <div class="card">
                 <h2>{name}</h2>
                 <div class="meta">Proxy URL: <a href="{proxy_url}">{proxy_url}</a></div>
                 <div class="meta">Camera target: {target}</div>
                 <div class="meta">Move timeout: {move_timeout}</div>
+                <div class="meta">Thread: <span class="status {running_class}">{running_text}</span></div>
                 <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
                 <h3 style="margin-top:20px;">Example Frigate configuration</h3>
                 <p class="footer">Add this to your Frigate config.yml:</p>
@@ -219,6 +232,8 @@ if __name__ == '__main__':
     threads = []
     for cam_cfg in camera_configs:
         t = threading.Thread(target=run_flask_app_for_camera, args=(cam_cfg, cfg), daemon=True)
+        # Attach thread object to config so status page can show if it's alive
+        cam_cfg['_thread'] = t
         t.start()
         threads.append(t)
     # Keep main thread alive

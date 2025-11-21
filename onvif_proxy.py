@@ -116,13 +116,14 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         .card { background: white; border: 1px solid #e1e6ea; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(16,24,40,0.03); }
         .card h2 { margin: 0 0 8px 0; font-size: 18px; }
         .meta { font-size: 13px; color: #4b5563; margin-bottom: 8px; }
+        .example { margin-top: 15px; font-size: 15px; font-weight: bold; }
         .status { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
         .status.idle { background: #eef2ff; color: #4f46e5; }
         .status.moving { background: #fff7ed; color: #b45309; }
         .status.running { background: #eef2ff; color: #4f46e5; }
         .status.stopped { background: #fff7ed; color: #b45309; }
         pre.snippet { background: #0b1220; color: #cbd5e1; padding: 12px; border-radius: 6px; overflow: auto; }
-        .footer { margin-top: 18px; font-size: 13px; color: #6b7280; }
+        .footer { font-size: 13px; color: #6b7280; }
         '''
 
         cards = []
@@ -152,17 +153,19 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 <div class="meta">Move timeout: {move_timeout}</div>
                 <div class="meta">Thread: <span class="status {running_class}">{running_text}</span></div>
                 <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
-                <h3 style="margin-top:20px;">Example Frigate configuration</h3>
-                <p class="footer">Add this to your Frigate config.yml:</p>
+                <details>
+                <summary class="example">Example Frigate Config:</summary>
+                <p class="footer">Add this to your Frigate config.yml under the camera's config.</p>
                 <pre class="snippet">
 cameras:
   {name}:
     onvif:
-    host: {global_host}
-    port: {port}
-    username: camera_user
-    password: camera_pass                
+      host: {global_host}
+      port: {port}
+      username: camera_user
+      password: camera_pass             
                 </pre>
+                </details>
             </div>
             '''
             cards.append(card)

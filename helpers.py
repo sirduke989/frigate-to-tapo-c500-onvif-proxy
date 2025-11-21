@@ -14,7 +14,7 @@ class ONVIFHelpers:
         after `timeout` seconds. Cancels any existing timer first.
         Stores the timer object in camera_config['_move_timer'].
         """
-        timeout = camera_config.get('move_timeout', 30)
+        timeout = camera_config.get('move_timeout', 10)
         # Cancel existing timer if present
         existing = camera_config.get('_move_timer')
         if isinstance(existing, threading.Timer):

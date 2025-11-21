@@ -28,7 +28,7 @@ class ONVIFHelpers:
 
         def _set_idle():
             ONVIFHelpers.set_idle(camera_config)
-            logger.warning(f"[{camera_config.get('name')}] Status timeout expired; set to IDLE")
+            logger.warning(f"[{camera_config.get('name')}]: Status timeout expired; set to IDLE")
 
         timer = threading.Timer(timeout, _set_idle)
         timer.daemon = True

@@ -25,26 +25,26 @@ class ONVIFResponseModifier:
         elif operation == 'GetProfiles':
             return etree.tostring(root)
         elif operation == 'GetConfiguration':
-            logger.warning("Post GetConfiguration modification not implemented yet")
+            logger.warning(f"[{camera_config['name']}]: Post GetConfiguration modification not implemented yet")
 
             return etree.tostring(root)
         elif operation == 'GetConfigurationOptions':
             spaces = root.find('.//tt:Spaces', namespaces=ns)
             if spaces is None:
-                logger.warning("Could not find Spaces element in GetConfigurationOptions response")
+                logger.warning(f"[{camera_config['name']}]: Could not find Spaces element in GetConfigurationOptions response")
                 return etree.tostring(root)
 
             # Find RelativePanTiltTranslationSpace
             rel_pt_space = spaces.find('tt:RelativePanTiltTranslationSpace', namespaces=ns)
             if rel_pt_space is None:
-                logger.warning("Could not find RelativePanTiltTranslationSpace")
+                logger.warning(f"[{camera_config['name']}]: Could not find RelativePanTiltTranslationSpace")
                 return etree.tostring(root)
 
             # Check if FOV space already exists
             for space in spaces.findall('tt:RelativePanTiltTranslationSpace', namespaces=ns):
                 uri = space.find('{http://www.onvif.org/ver10/schema}URI')
                 if uri is not None and 'TranslationSpaceFov' in uri.text:
-                    logger.info("FOV space already exists, skipping")
+                    logger.info(f"[{camera_config['name']}]: FOV space already exists, skipping")
                     return etree.tostring(root)
 
             # Create new FOV space element (copy existing GenericSpace and modify)
@@ -79,7 +79,7 @@ class ONVIFResponseModifier:
 
             # Convert back to string
             modified_response = etree.tostring(root, encoding='utf-8', xml_declaration=True).decode('utf-8')
-            logger.info("Successfully added FOV space to GetConfigurationOptions")
+            logger.info(f"[{camera_config['name']}]: Successfully added FOV space to GetConfigurationOptions")
 
             return modified_response
         elif operation == 'GetStatus':
@@ -87,26 +87,26 @@ class ONVIFResponseModifier:
 
             PTZStatus = root.find('.//tptz:PTZStatus', namespaces=ns)
             if PTZStatus is None:
-                logger.warning("Could not find PTZStatus element in GetStatus response")
+                logger.warning(f"[{camera_config['name']}]: Could not find PTZStatus element in GetStatus response")
                 return etree.tostring(root)
             
             MoveStatus = PTZStatus.find('.//tt:MoveStatus/tt:PanTilt', namespaces=ns)
             if MoveStatus is None:
-                logger.warning("Could not find MoveStatus element in GetStatus response")
+                logger.warning(f"[{camera_config['name']}]: Could not find MoveStatus element in GetStatus response")
                 return etree.tostring(root)
 
-            logger.debug("MoveStatus original: " + MoveStatus.text)
+            logger.debug(f"[{camera_config['name']}]: MoveStatus original: " + MoveStatus.text)
             MoveStatus.text = last_status
 
             Position = PTZStatus.find('.//tt:Position/tt:PanTilt', namespaces=ns)
             if Position is None:
-                logger.warning("Could not find Position element in GetStatus response")
+                logger.warning(f"[{camera_config['name']}]: Could not find Position element in GetStatus response")
                 return etree.tostring(root)
 
             current_x = Position.get('x')
             current_y = Position.get('y')
 
-            logger.debug(f"Current position x={current_x}, y={current_y}")
+            logger.debug(f"[{camera_config['name']}]: Current position x={current_x}, y={current_y}")
 
             last_x = camera_config.get('status_x', None)
             last_y = camera_config.get('status_y', None)
@@ -116,7 +116,7 @@ class ONVIFResponseModifier:
                     MoveStatus.text = "IDLE"
                     ONVIFHelpers.set_idle(camera_config)
 
-            logger.info("Moved status set to: " + MoveStatus.text)
+            logger.info(f"[{camera_config['name']}]: Moved status set to: " + MoveStatus.text)
 
             camera_config['status_x'] = current_x
             camera_config['status_y'] = current_y
@@ -128,14 +128,14 @@ class ONVIFResponseModifier:
 
             Capabilities = root.find('.//tptz:Capabilities', namespaces=ns)
             if Capabilities is None:
-                logger.warning("Could not find Capabilities element in GetServiceCapabilities response")
+                logger.warning(f"[{camera_config['name']}]: Could not find Capabilities element in GetServiceCapabilities response")
                 return etree.tostring(root)
             
             # Modify Capabilities to add MoveStatus and StatusPosition support
             Capabilities.set('MoveStatus', 'true')
             Capabilities.set('StatusPosition', 'true')
 
-            logger.info("Modified Capabilities to include MoveStatus and StatusPosition support")
+            logger.info(f"[{camera_config['name']}]: Modified Capabilities to include MoveStatus and StatusPosition support")
 
 
             return etree.tostring(root)
@@ -144,10 +144,10 @@ class ONVIFResponseModifier:
             if Fault is None:
                 return etree.tostring(root)
             else:
-                logger.info("Fixing RelativeMoveResponse fault to success")
+                logger.info(f"[{camera_config['name']}]: Fixing RelativeMoveResponse fault to success")
                 Body = root.find('.//SOAP-ENV:Body', namespaces=ns)
                 if Body is None:
-                    logger.error("Could not find Body element to fix RelativeMoveResponse")
+                    logger.error(f"[{camera_config['name']}]: Could not find Body element to fix RelativeMoveResponse")
                     return etree.tostring(root)
                 
                 RelativeMoveResponse = etree.Element('{http://www.onvif.org/ver20/ptz/wsdl}RelativeMoveResponse')

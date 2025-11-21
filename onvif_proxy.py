@@ -72,7 +72,7 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
             return None, root
 
         except Exception as e:
-            logger.error(f"Error parsing SOAP request: {e}")
+            logger.error(f"[{camera_config['name']}] Error parsing SOAP request: {e}")
             return None, None
 
     # ONVIF proxy endpoint under /onvif/
@@ -84,13 +84,12 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         
         # Parse SOAP request
         operation, root = parse_soap_request(soap_body)
-        logger.info(f"Received {operation} request for service {service}")
+        logger.info(f"[{camera_config['name']}] Received {operation} request for service {service}")
 
         modified_request_body = ONVIFRequestModifier.modify_onvif_request(camera_config, operation, root)
         debug("Modified Request Payload:", modified_request_body)
-        logger.info(f"Camera status: {camera_config.get('status', 'IDLE')}")
-
-        logger.info(f"Proxying {operation} to camera")
+        logger.info(f"[{camera_config['name']}] Camera status: {camera_config.get('status', 'IDLE')}")
+        logger.info(f"[{camera_config['name']}] Proxying {operation} to camera")
         response_text, status_code = ONVIFForwardProxy.proxy_tcp_request(camera_config, service, modified_request_body)
         debug("Camera Response Payload:", response_text)
         
@@ -153,8 +152,8 @@ def run_flask_app_for_camera(camera_config, all_camera_configs):
         raise RuntimeError('Configuration must provide a root-level "proxy_host" key')
     bind_host = all_camera_configs.get('proxy_host')
     port = camera_config['proxy_port']
-    logger.info(f"Starting ONVIF Proxy server for '{camera_config['name']}' on http://{bind_host}:{port}")
-    logger.info(f"Forwarding requests to camera at {camera_config['camera_host']}:{camera_config['camera_port']}")
+    logger.info(f"[{camera_config['name']}] Starting ONVIF Proxy server on http://{bind_host}:{port}")
+    logger.info(f"[{camera_config['name']}] Forwarding requests to camera at {camera_config['camera_host']}:{camera_config['camera_port']}")
     app.run(host="0.0.0.0", port=port, threaded=True)
 
 if __name__ == '__main__':

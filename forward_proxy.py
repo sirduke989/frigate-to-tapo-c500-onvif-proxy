@@ -38,7 +38,7 @@ class ONVIFForwardProxy:
                 'User-Agent': 'ONVIF-Proxy/1.0',
             }
 
-            logger.debug(f"Forwarding to {service_url}")
+            logger.debug(f"{camera_config['name']}: Forwarding to {service_url}")
 
             response = requests.post(
                 service_url,
@@ -50,15 +50,15 @@ class ONVIFForwardProxy:
 
             return response.text, response.status_code
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout forwarding request to {service_url}")
+            logger.error(f"{camera_config['name']}: Timeout forwarding request to {service_url}")
             return ONVIFForwardProxy.timeout_fault(), 500
 
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error to {service_url}: {e}")
+            logger.error(f"{camera_config['name']}: Connection error to {service_url}: {e}")
             return ONVIFForwardProxy.connection_fault(), 500
 
         except Exception as e:
-            logger.error(f"Error forwarding request: {e}", exc_info=True)
+            logger.error(f"{camera_config['name']}: Error forwarding request: {e}", exc_info=True)
             return ONVIFForwardProxy.generic_fault(str(e)), 500
 
     def timeout_fault(self) -> str:

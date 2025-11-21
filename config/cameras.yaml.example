@@ -14,7 +14,8 @@ cameras:
 # Negative values will invert the direction of movement
     x_multiplier: 0.2
     y_multiplier: -0.6
-    move_timeout: 30   #Optional default timeout 
+#Optional default timeout of how long to wait untill setting the camera's status from Moving back to Idle if move command does not follow up with Status checks
+    move_timeout: 10
 
   - name: Back Yard Cam
     camera_host: 192.168.1.81

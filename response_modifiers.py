@@ -166,32 +166,13 @@ class ONVIFResponseModifier:
         # Not a tracked operation
         return etree.tostring(root)
 
-    def rewrite_host_urls(camera_config, response_text):
+    def rewrite_host_urls(global_host, camera_config, response_text):
         CAMERA_HOST = camera_config['camera_host']
         CAMERA_PORT = camera_config['camera_port']
-        PROXY_HOST = camera_config.get('proxy_host', '127.0.0.1')
+        PROXY_HOST = global_host
         PROXY_PORT = camera_config['proxy_port']
 
         old_url = f"http://{CAMERA_HOST}:{CAMERA_PORT}/onvif/service"
         new_url = f"http://{PROXY_HOST}:{PROXY_PORT}/onvif/service"
         response_str = response_text.replace(old_url, new_url)
-        return response_str
-
-    def fix_header_size(camera_config, operation, response_text):
-        CAMERA_NAME = camera_config['name']
-        CAMERA_HOST = camera_config['camera_host']
-        CAMERA_PORT = camera_config['camera_port']
-        PROXY_HOST = camera_config.get('proxy_host', '127.0.0.1')
-        PROXY_PORT = camera_config['proxy_port']
-    
-        old_url = f"http://{CAMERA_HOST}:{CAMERA_PORT}/onvif/service"
-        new_url = f"http://{PROXY_HOST}:{PROXY_PORT}/onvif/service"
-        response_str = response_text.replace(old_url, new_url)
-        parts = response_str.split('\r\n\r\n', 1)
-        if len(parts) == 2:
-            headers = parts[0]
-            body = parts[1]
-            new_content_length = len(body.encode('utf-8'))
-            new_headers = re.sub(r'Content-Length: [0-9]+', f'Content-Length: {new_content_length}', headers)
-            response_str = new_headers + '\r\n\r\n' + body
         return response_str

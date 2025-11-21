@@ -93,7 +93,8 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         response_text, status_code = ONVIFForwardProxy.proxy_tcp_request(camera_config, service, modified_request_body)
         debug("Camera Response Payload:", response_text)
         
-        response_text = ONVIFResponseModifier.rewrite_host_urls(camera_config, response_text)
+        global_host = all_camera_configs.get('proxy_host') if isinstance(all_camera_configs, dict) else '127.0.0.1'
+        response_text = ONVIFResponseModifier.rewrite_host_urls(global_host, camera_config, response_text)
 
         final_response_body = ONVIFResponseModifier.modify_onvif_response(camera_config, operation, etree.fromstring(response_text.encode()))
         debug("Final Response Payload:", final_response_body)

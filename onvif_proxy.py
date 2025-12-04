@@ -99,6 +99,11 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         final_response_body = ONVIFResponseModifier.modify_onvif_response(camera_config, operation, etree.fromstring(response_text.encode()))
         debug("Final Response Payload:", final_response_body)
         
+        # Increment message counter
+        if '_messages_proxied' not in camera_config:
+            camera_config['_messages_proxied'] = 0
+        camera_config['_messages_proxied'] += 1
+        
         return Response(final_response_body, mimetype='application/soap+xml; charset=utf-8')
 
     # Root status page
@@ -145,6 +150,7 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 is_running = False
             running_class = 'running' if is_running else 'stopped'
             running_text = 'Running' if is_running else 'Stopped'
+            messages_proxied = cam.get('_messages_proxied', 0)
             card = f'''
             <div class="card">
                 <h2>{name}</h2>
@@ -153,6 +159,7 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 <div class="meta">Move timeout: {move_timeout}</div>
                 <div class="meta">Thread: <span class="status {running_class}">{running_text}</span></div>
                 <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
+                <div class="meta">Messages proxied: <strong>{messages_proxied}</strong></div>
                 <details>
                 <summary class="example">Example Frigate Config:</summary>
                 <p class="footer">Add this to your Frigate config.yml under the camera's config.</p>

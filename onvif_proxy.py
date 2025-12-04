@@ -1,7 +1,7 @@
 import re
 import yaml
 import threading
-from flask import Flask, request, abort, Response
+from flask import Flask, request, abort, Response, jsonify
 from lxml import etree
 import os
 from typing import Dict, Any, Optional, Tuple
@@ -106,6 +106,57 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
         
         return Response(final_response_body, mimetype='application/soap+xml; charset=utf-8')
 
+    # Endpoint to update camera multipliers and persist to config
+    @app.route('/update', methods=['POST'])
+    def update_camera_config():
+        # Accept JSON payload with x_multiplier and/or y_multiplier
+        try:
+            data = request.get_json(force=True)
+        except Exception:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        changed = False
+        # find which camera to update: prefer explicit proxy_port or name in payload
+        target_cam = None
+        if 'proxy_port' in data:
+            # match by proxy_port
+            for cam in all_camera_configs.get('cameras', []):
+                if str(cam.get('proxy_port')) == str(data.get('proxy_port')):
+                    target_cam = cam
+                    break
+        if target_cam is None and 'name' in data:
+            for cam in all_camera_configs.get('cameras', []):
+                if str(cam.get('name')) == str(data.get('name')):
+                    target_cam = cam
+                    break
+
+        # fallback: update the camera tied to this app instance
+        if target_cam is None:
+            target_cam = camera_config
+
+        # validate values: must be numeric and between -1 and 1
+        for key in ('x_multiplier', 'y_multiplier'):
+            if key in data:
+                try:
+                    val = float(data[key])
+                except Exception:
+                    return jsonify({"error": f"{key} must be a number"}), 400
+                if val < -1 or val > 1:
+                    return jsonify({"error": f"{key} must be between -1 and 1"}), 400
+                target_cam[key] = val
+                changed = True
+
+        if changed:
+            # We only update the in-memory camera entry here.
+            # Persisting changes to disk is intentionally left to the user.
+            cam_name = target_cam.get('name', '<unknown>')
+            return jsonify({
+                "status": "ok",
+                "message": f"Updated in memory for camera '{cam_name}'. To make this change permanent, edit config/cameras.yaml and restart the proxy."
+            }), 200
+
+        return jsonify({"status": "no_changes", "message": "No updates provided"}), 200
+
     # Root status page
     @app.route('/')
     def status_page():
@@ -151,6 +202,8 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
             running_class = 'running' if is_running else 'stopped'
             running_text = 'Running' if is_running else 'Stopped'
             messages_proxied = cam.get('_messages_proxied', 0)
+            x_val = cam.get('x_multiplier', '')
+            y_val = cam.get('y_multiplier', '')
             card = f'''
             <div class="card">
                 <h2>{name}</h2>
@@ -161,38 +214,100 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
                 <div class="meta">Messages proxied: <strong>{messages_proxied}</strong></div>
                 <details>
+                <summary class="example">Edit X/Y Multipliers</summary>
+                <div class="meta">X multiplier: <input id="x_{port}" type="text" value="{x_val}" /></div>
+                <div class="meta">Y multiplier: <input id="y_{port}" type="text" value="{y_val}" /></div>
+                <div class="meta"><button id="btn_{port}" onclick="updateMultipliers('{port}')">Save</button> <span id="msg_{port}" class="footer"></span></div>
+                </details>
+                <details>
                 <summary class="example">Example Frigate Config:</summary>
                 <p class="footer">Add this to your Frigate config.yml under the camera's config.</p>
-                <pre class="snippet">
+                                <pre class="snippet">
 cameras:
-  {name}:
-    onvif:
-      host: {global_host}
-      port: {port}
-      username: camera_user
-      password: camera_pass             
-                </pre>
-                </details>
-            </div>
-            '''
+    {name}:
+        onvif:
+            host: {global_host}
+            port: {port}
+            username: camera_user
+            password: camera_pass             
+                                </pre>
+                                </details>
+                        </div>
+                        '''
             cards.append(card)
-        html = f"""
+        html = """
         <html>
         <head>
             <title>ONVIF Proxy Status</title>
-            <style>{css}</style>
+            <style>__CSS__</style>
+            <script>
+            function updateMultipliers(port) {
+                var btn = document.getElementById('btn_' + port);
+                var el = document.getElementById('msg_' + port);
+                var xraw = document.getElementById('x_' + port).value;
+                var yraw = document.getElementById('y_' + port).value;
+
+                // Build payload only for non-empty fields
+                var payload = {};
+                if (xraw !== '') {
+                    var xv = parseFloat(xraw);
+                    if (!isFinite(xv) || xv < -1 || xv > 1) {
+                        el.innerText = 'X must be a number between -1 and 1';
+                        return;
+                    }
+                    payload.x_multiplier = xv;
+                }
+                if (yraw !== '') {
+                    var yv = parseFloat(yraw);
+                    if (!isFinite(yv) || yv < -1 || yv > 1) {
+                        el.innerText = 'Y must be a number between -1 and 1';
+                        return;
+                    }
+                    payload.y_multiplier = yv;
+                }
+
+                if (Object.keys(payload).length === 0) {
+                    el.innerText = 'No changes to save';
+                    setTimeout(function(){ el.innerText = ''; }, 1500);
+                    return;
+                }
+
+                // Disable button while saving
+                btn.disabled = true;
+                el.innerText = 'Saving...';
+
+                fetch('/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(Object.assign({proxy_port: port}, payload))
+                }).then(function(resp) {
+                    return resp.json().then(function(j){ return {ok: resp.ok, json: j}; });
+                }).then(function(r) {
+                    if (r.ok) {
+                        el.innerText = r.json && r.json.message ? r.json.message : 'Saved';
+                        setTimeout(function(){ el.innerText = ''; }, 4000);
+                    } else {
+                        el.innerText = r.json && r.json.error ? r.json.error : 'Error saving';
+                    }
+                }).catch(function(e) {
+                    el.innerText = 'Network error';
+                }).finally(function() { btn.disabled = false; });
+            }
+            </script>
         </head>
         <body>
             <div class="container">
                 <h1>ONVIF Proxy Status</h1>
-                <p class="footer">Proxy host: <strong>{global_host}</strong></p>
+                <p class="footer">Proxy host: <strong>__HOST__</strong></p>
                 <div class="grid">
-                    {''.join(cards)}
+                    __CARDS__
                 </div>
             </div>
         </body>
         </html>
         """
+        # inject variables into the non-f string to avoid escaping braces in CSS/JS
+        html = html.replace('__CSS__', css).replace('__CARDS__', ''.join(cards)).replace('__HOST__', global_host)
 
         return html
     return app
@@ -237,6 +352,9 @@ def run_flask_app_for_camera(camera_config, all_camera_configs):
 if __name__ == '__main__':
     config_path = os.path.join(os.path.dirname(__file__), 'config', 'cameras.yaml')
     cfg = load_camera_configs(config_path)
+    # store config path and a lock so worker threads can persist updates safely
+    cfg['_config_path'] = config_path
+    cfg['_file_lock'] = threading.Lock()
     camera_configs = cfg['cameras']
 
     threads = []

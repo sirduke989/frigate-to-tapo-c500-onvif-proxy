@@ -4,6 +4,7 @@
 
 # User config file
 config/cameras.yaml
+config/cameras.yaml.backup*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

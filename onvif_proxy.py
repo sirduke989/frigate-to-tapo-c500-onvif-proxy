@@ -157,6 +157,33 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
 
         return jsonify({"status": "no_changes", "message": "No updates provided"}), 200
 
+    @app.route('/status.json')
+    def status_json():
+        # Return a lightweight JSON of current camera statuses for polling
+        try:
+            cam_list = all_camera_configs.get('cameras') if isinstance(all_camera_configs, dict) else [camera_config]
+            out = []
+            for cam in cam_list:
+                thread_obj = cam.get('_thread')
+                is_running = False
+                try:
+                    if thread_obj is not None:
+                        is_running = bool(getattr(thread_obj, 'is_alive', lambda: False)())
+                except Exception:
+                    is_running = False
+                out.append({
+                    'name': cam.get('name'),
+                    'proxy_port': cam.get('proxy_port'),
+                    'status': cam.get('status', 'IDLE'),
+                    'messages_proxied': cam.get('_messages_proxied', 0),
+                    'x_multiplier': cam.get('x_multiplier'),
+                    'y_multiplier': cam.get('y_multiplier'),
+                    'is_running': is_running,
+                })
+            return jsonify({'cameras': out})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     # Root status page
     @app.route('/')
     def status_page():
@@ -210,14 +237,17 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 <div class="meta">Proxy URL: <a href="{proxy_url}">{proxy_url}</a></div>
                 <div class="meta">Camera target: {target}</div>
                 <div class="meta">Move timeout: {move_timeout}</div>
-                <div class="meta">Thread: <span class="status {running_class}">{running_text}</span></div>
-                <div class="meta">Status: <span class="status {status_class}">{status}</span></div>
-                <div class="meta">Messages proxied: <strong>{messages_proxied}</strong></div>
+                <div class="meta">Thread: <span id="thread_{port}" class="status {running_class}">{running_text}</span></div>
+                <div class="meta">Status: <span id="status_{port}" class="status {status_class}">{status}</span></div>
+                <div class="meta">Messages proxied: <strong id="messages_{port}">{messages_proxied}</strong></div>
                 <details>
                 <summary class="example">Edit X/Y Multipliers</summary>
                 <div class="meta">X multiplier: <input id="x_{port}" type="text" value="{x_val}" /></div>
                 <div class="meta">Y multiplier: <input id="y_{port}" type="text" value="{y_val}" /></div>
-                <div class="meta"><button id="btn_{port}" onclick="updateMultipliers('{port}')">Save</button> <span id="msg_{port}" class="footer"></span></div>
+                <div class="meta">
+                    <button id="btn_{port}" onclick="updateMultipliers('{port}')">Save</button>
+                    <span id="msg_{port}" class="footer"></span>
+                </div>
                 </details>
                 <details>
                 <summary class="example">Example Frigate Config:</summary>
@@ -293,6 +323,41 @@ cameras:
                     el.innerText = 'Network error';
                 }).finally(function() { btn.disabled = false; });
             }
+            
+            // Poll the server for up-to-date camera statuses and message counts
+            function pollStatus() {
+                fetch('/status.json', {cache: 'no-store'})
+                    .then(function(resp){ return resp.json(); })
+                    .then(function(data){
+                        if (!data || !data.cameras) return;
+                        data.cameras.forEach(function(c){
+                            try {
+                                var port = c.proxy_port;
+                                var statusEl = document.getElementById('status_' + port);
+                                if (statusEl) {
+                                    statusEl.innerText = c.status;
+                                    // update status classes
+                                    statusEl.className = 'status ' + (c.status && c.status.toUpperCase() === 'MOVING' ? 'moving' : 'idle');
+                                }
+                                var threadEl = document.getElementById('thread_' + port);
+                                if (threadEl) {
+                                    var runningClass = c.is_running ? 'running' : 'stopped';
+                                    threadEl.innerText = c.is_running ? 'Running' : 'Stopped';
+                                    threadEl.className = 'status ' + runningClass;
+                                }
+                                var messagesEl = document.getElementById('messages_' + port);
+                                if (messagesEl) {
+                                    messagesEl.innerText = c.messages_proxied || 0;
+                                }
+                            } catch (e) { /* ignore */ }
+                        });
+                    }).catch(function(){ /* ignore errors during polling */ });
+            }
+
+            // start polling every 2 seconds
+            setInterval(pollStatus, 2000);
+            // initial poll
+            setTimeout(pollStatus, 500);
             </script>
         </head>
         <body>

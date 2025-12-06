@@ -431,7 +431,7 @@ def run_flask_app_for_server(all_camera_configs):
     logger.info(f"[ONVIF Proxy Server] Starting ONVIF Proxy server on http://{proxy_server_ip}:{proxy_server_port}")
     logger.info(f"[ONVIF Proxy Server] Managing {len(camera_configs)} cameras.")
 
-    app.run(host=proxy_server_ip, port=proxy_server_port, threaded=True)
+    app.run(host="0.0.0.0", port=proxy_server_port, threaded=True)
                                              
 def run_flask_app_for_camera(camera_config, all_camera_configs):
     app = create_onvif_proxy_app(camera_config, all_camera_configs)
@@ -442,7 +442,7 @@ def run_flask_app_for_camera(camera_config, all_camera_configs):
     port = camera_config['proxy_port']
     logger.info(f"[{camera_config['name']}] Starting ONVIF Proxy server on http://{bind_host}:{port}")
     logger.info(f"[{camera_config['name']}] Forwarding requests to camera at {camera_config['camera_host']}:{camera_config['camera_port']}")
-    app.run(host=bind_host, port=port, threaded=True)
+    app.run(host="0.0.0.0", port=port, threaded=True)
 
 if __name__ == '__main__':
     config_path = os.path.join(os.path.dirname(__file__), 'config', 'cameras.yaml')

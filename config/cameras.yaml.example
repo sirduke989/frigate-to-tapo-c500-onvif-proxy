@@ -1,10 +1,11 @@
 # ONVIF Proxy cameras configuration (YAML)
 #
-# Top-level `proxy_host` sets the host/address the proxy servers should bind to.
+# Top-level `proxy_server_ip` sets the host/address the proxy servers should bind to.
 # Each camera entry in `cameras` defines the camera target and proxy port.
 #
 # Example:
-proxy_host: 0.0.0.0
+proxy_server_ip: 0.0.0.0
+proxy_server_port: 80
 cameras:
   - name: Front Yard Cam
     camera_host: 192.168.1.80

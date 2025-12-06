@@ -26,87 +26,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def create_onvif_proxy_app(camera_config, all_camera_configs=None):
+def create_onvif_proxy_server(all_camera_configs):
     """
-    Creates a Flask app for a specific camera config.
-    all_camera_configs: list of all camera configs, for status page.
+    Creates a Flask app that serves as the ONVIF proxy server for all cameras.
+    Each camera will have its own endpoint under /onvif/<camera_name>/.
     """
     app = Flask(__name__)
-    CAMERA_NAME = camera_config['name']
-    CAMERA_HOST = camera_config['camera_host']
-    CAMERA_PORT = camera_config['camera_port']
-    # Use global proxy_host (root-level) from provided all_camera_configs
-    if not isinstance(all_camera_configs, dict) or 'proxy_host' not in all_camera_configs:
-        raise RuntimeError('Configuration must provide a root-level "proxy_host" key')
-    PROXY_HOST = all_camera_configs.get('proxy_host', '127.0.0.1')
-    PROXY_PORT = camera_config['proxy_port']
-
-    def debug(msg, payload_str):
-        if DEBUG:
-            logger.debug(f"[{camera_config['name']}] {msg} \n{payload_str}")
-            #print(f"[{camera_config['name']}] {msg} \n{payload_str[:500]}...")
-
-    def parse_soap_request(soap_body: str) -> Tuple[Optional[str], Optional[etree.Element]]:
-        """
-        Parse SOAP request and extract operation name.
-
-        Args:
-            soap_body: Raw SOAP XML string
-
-        Returns:
-            Tuple of (operation_name, xml_root)
-        """
-        try:
-            root = etree.fromstring(soap_body.encode())
-
-            # Find the operation (first element in Body)
-            body = root.find('.//{http://www.w3.org/2003/05/soap-envelope}Body')
-            if body is None:
-                body = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Body')
-
-            if body is not None and len(body) > 0:
-                operation_elem = body[0]
-                operation = etree.QName(operation_elem).localname
-                return operation, root
-
-            return None, root
-
-        except Exception as e:
-            logger.error(f"[{camera_config['name']}] Error parsing SOAP request: {e}")
-            return None, None
-
-    # ONVIF proxy endpoint under /onvif/
-    @app.route('/onvif/<service>', methods=['POST'])
-    def handle_onvif_request(service):
-        # Get SOAP body
-        soap_body = request.data.decode('utf-8')
-        #debug("Raw Client Request Payload:", soap_body)
-        
-        # Parse SOAP request
-        operation, root = parse_soap_request(soap_body)
-        logger.info(f"[{camera_config['name']}] Received {operation} request for service {service}")
-
-        modified_request_body = ONVIFRequestModifier.modify_onvif_request(camera_config, operation, root)
-        debug("Modified Request Payload:", modified_request_body)
-        logger.info(f"[{camera_config['name']}] Camera status: {camera_config.get('status', 'IDLE')}")
-        logger.info(f"[{camera_config['name']}] Proxying {operation} to camera")
-        response_text, status_code = ONVIFForwardProxy.proxy_tcp_request(camera_config, service, modified_request_body)
-        debug("Camera Response Payload:", response_text)
-        
-        global_host = all_camera_configs.get('proxy_host') if isinstance(all_camera_configs, dict) else '127.0.0.1'
-        response_text = ONVIFResponseModifier.rewrite_host_urls(global_host, camera_config, response_text)
-
-        final_response_body = ONVIFResponseModifier.modify_onvif_response(camera_config, operation, etree.fromstring(response_text.encode()))
-        debug("Final Response Payload:", final_response_body)
-        
-        # Increment message counter
-        if '_messages_proxied' not in camera_config:
-            camera_config['_messages_proxied'] = 0
-        camera_config['_messages_proxied'] += 1
-        
-        return Response(final_response_body, mimetype='application/soap+xml; charset=utf-8')
-
-    # Endpoint to update camera multipliers and persist to config
+    if not isinstance(all_camera_configs, dict) or 'proxy_server_ip' not in all_camera_configs or 'proxy_server_port' not in all_camera_configs:
+        raise RuntimeError('Configuration must provide a root-level "proxy_server_ip" and proxy_server_port keys')
+    camera_configs = all_camera_configs.get('cameras', [])
+    proxy_server_ip = all_camera_configs.get('proxy_server_ip')
+    proxy_server_port = all_camera_configs.get('proxy_server_port')
+    
+        # Endpoint to update camera multipliers and persist to config
     @app.route('/update', methods=['POST'])
     def update_camera_config():
         # Accept JSON payload with x_multiplier and/or y_multiplier
@@ -129,10 +61,6 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 if str(cam.get('name')) == str(data.get('name')):
                     target_cam = cam
                     break
-
-        # fallback: update the camera tied to this app instance
-        if target_cam is None:
-            target_cam = camera_config
 
         # validate values: must be numeric and between -1 and 1
         for key in ('x_multiplier', 'y_multiplier'):
@@ -157,11 +85,11 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
 
         return jsonify({"status": "no_changes", "message": "No updates provided"}), 200
 
-    @app.route('/status.json')
+    @app.route('/status.json', methods=['GET'])
     def status_json():
         # Return a lightweight JSON of current camera statuses for polling
         try:
-            cam_list = all_camera_configs.get('cameras') if isinstance(all_camera_configs, dict) else [camera_config]
+            cam_list = all_camera_configs.get('cameras') 
             out = []
             for cam in cam_list:
                 thread_obj = cam.get('_thread')
@@ -178,6 +106,7 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                     'messages_proxied': cam.get('_messages_proxied', 0),
                     'x_multiplier': cam.get('x_multiplier'),
                     'y_multiplier': cam.get('y_multiplier'),
+                    'move_timeout': cam.get('move_timeout'),
                     'is_running': is_running,
                 })
             return jsonify({'cameras': out})
@@ -188,8 +117,8 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
     @app.route('/')
     def status_page():
         # Render a nicer HTML status page with cards and example Frigate snippet
-        cam_list = all_camera_configs.get('cameras') if isinstance(all_camera_configs, dict) else [camera_config]
-        global_host = all_camera_configs.get('proxy_host') if isinstance(all_camera_configs, dict) else '127.0.0.1'
+        cam_list = all_camera_configs.get('cameras') 
+        global_host = all_camera_configs.get('proxy_server_ip') if isinstance(all_camera_configs, dict) else '127.0.0.1'
 
         css = '''
         body { font-family: Arial, sans-serif; background: #f7f9fb; color: #222; }
@@ -217,7 +146,7 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
             target = f"{cam.get('camera_host')}:{port}"
             status = cam.get('status', 'IDLE')
             status_class = 'moving' if status.upper() == 'MOVING' else 'idle'
-            move_timeout = cam.get('move_timeout', '30s')
+            move_timeout = cam.get('move_timeout', '10')
             # Thread running status (if main attached a thread object to the camera config)
             thread_obj = cam.get('_thread')
             is_running = False
@@ -236,14 +165,14 @@ def create_onvif_proxy_app(camera_config, all_camera_configs=None):
                 <h2>{name}</h2>
                 <div class="meta">Proxy URL: <a href="{proxy_url}">{proxy_url}</a></div>
                 <div class="meta">Camera target: {target}</div>
-                <div class="meta">Move timeout: {move_timeout}</div>
                 <div class="meta">Thread: <span id="thread_{port}" class="status {running_class}">{running_text}</span></div>
                 <div class="meta">Status: <span id="status_{port}" class="status {status_class}">{status}</span></div>
                 <div class="meta">Messages proxied: <strong id="messages_{port}">{messages_proxied}</strong></div>
                 <details>
-                <summary class="example">Edit X/Y Multipliers</summary>
+                <summary class="example">Settings</summary>
                 <div class="meta">X multiplier: <input id="x_{port}" type="text" value="{x_val}" /></div>
                 <div class="meta">Y multiplier: <input id="y_{port}" type="text" value="{y_val}" /></div>
+                <div class="meta">Move timeout: <input id="move_timeout_{port}" type="text" value="{move_timeout}" /></div>
                 <div class="meta">
                     <button id="btn_{port}" onclick="updateMultipliers('{port}')">Save</button>
                     <span id="msg_{port}" class="footer"></span>
@@ -276,6 +205,7 @@ cameras:
                 var el = document.getElementById('msg_' + port);
                 var xraw = document.getElementById('x_' + port).value;
                 var yraw = document.getElementById('y_' + port).value;
+                var moveTimeoutRaw = document.getElementById('move_timeout_' + port).value;
 
                 // Build payload only for non-empty fields
                 var payload = {};
@@ -294,6 +224,14 @@ cameras:
                         return;
                     }
                     payload.y_multiplier = yv;
+                }
+                if (moveTimeoutRaw !== '') {
+                    var moveTimeoutVal = parseInt(moveTimeoutRaw, 10);
+                    if (!isFinite(moveTimeoutVal) || moveTimeoutVal < 0) {
+                        el.innerText = 'Move timeout must be a non-negative integer';
+                        return;
+                    }
+                    payload.move_timeout = moveTimeoutVal;
                 }
 
                 if (Object.keys(payload).length === 0) {
@@ -377,10 +315,91 @@ cameras:
         return html
     return app
 
+def create_onvif_proxy_app(camera_config, all_camera_configs=None):
+    """
+    Creates a Flask app for a specific camera config.
+    all_camera_configs: list of all camera configs, for status page.
+    """
+    app = Flask(__name__)
+    CAMERA_NAME = camera_config['name']
+    CAMERA_HOST = camera_config['camera_host']
+    CAMERA_PORT = camera_config['camera_port']
+    # Use global proxy_server_ip (root-level) from provided all_camera_configs
+    if not isinstance(all_camera_configs, dict) or 'proxy_server_ip' not in all_camera_configs:
+        raise RuntimeError('Configuration must provide a root-level "proxy_server_ip" key')
+    proxy_server_ip = all_camera_configs.get('proxy_server_ip', '127.0.0.1')
+    PROXY_PORT = camera_config['proxy_port']
+
+    def debug(msg, payload_str):
+        if DEBUG:
+            logger.debug(f"[{camera_config['name']}] {msg} \n{payload_str}")
+            #print(f"[{camera_config['name']}] {msg} \n{payload_str[:500]}...")
+
+    def parse_soap_request(soap_body: str) -> Tuple[Optional[str], Optional[etree.Element]]:
+        """
+        Parse SOAP request and extract operation name.
+
+        Args:
+            soap_body: Raw SOAP XML string
+
+        Returns:
+            Tuple of (operation_name, xml_root)
+        """
+        try:
+            root = etree.fromstring(soap_body.encode())
+
+            # Find the operation (first element in Body)
+            body = root.find('.//{http://www.w3.org/2003/05/soap-envelope}Body')
+            if body is None:
+                body = root.find('.//{http://schemas.xmlsoap.org/soap/envelope/}Body')
+
+            if body is not None and len(body) > 0:
+                operation_elem = body[0]
+                operation = etree.QName(operation_elem).localname
+                return operation, root
+
+            return None, root
+
+        except Exception as e:
+            logger.error(f"[{camera_config['name']}] Error parsing SOAP request: {e}")
+            return None, None
+
+    # ONVIF proxy endpoint under /onvif/
+    @app.route('/onvif/<service>', methods=['POST'])
+    def handle_onvif_request(service):
+        # Get SOAP body
+        soap_body = request.data.decode('utf-8')
+        #debug("Raw Client Request Payload:", soap_body)
+        
+        # Parse SOAP request
+        operation, root = parse_soap_request(soap_body)
+        logger.info(f"[{camera_config['name']}] Received {operation} request for service {service}")
+
+        modified_request_body = ONVIFRequestModifier.modify_onvif_request(camera_config, operation, root)
+        debug("Modified Request Payload:", modified_request_body)
+        logger.info(f"[{camera_config['name']}] Camera status: {camera_config.get('status', 'IDLE')}")
+        logger.info(f"[{camera_config['name']}] Proxying {operation} to camera")
+        response_text, status_code = ONVIFForwardProxy.proxy_tcp_request(camera_config, service, modified_request_body)
+        debug("Camera Response Payload:", response_text)
+        
+        global_host = all_camera_configs.get('proxy_server_ip') if isinstance(all_camera_configs, dict) else '127.0.0.1'
+        response_text = ONVIFResponseModifier.rewrite_host_urls(global_host, camera_config, response_text)
+
+        final_response_body = ONVIFResponseModifier.modify_onvif_response(camera_config, operation, etree.fromstring(response_text.encode()))
+        debug("Final Response Payload:", final_response_body)
+        
+        # Increment message counter
+        if '_messages_proxied' not in camera_config:
+            camera_config['_messages_proxied'] = 0
+        camera_config['_messages_proxied'] += 1
+        
+        return Response(final_response_body, mimetype='application/soap+xml; charset=utf-8')
+    return app
+
 def load_camera_configs(config_path):
     """
     Load camera configuration from YAML. Expects a dict with keys:
-      - proxy_host: string
+      - proxy_server_ip: string
       - cameras: list of camera entries
 
     Returns the parsed dict.
@@ -391,7 +410,7 @@ def load_camera_configs(config_path):
             f"Configuration file '{config_path}' not found.\n"
             f"Create it by copying the example and editing it:\n"
             f"  cp {example_path} {config_path}\n"
-            f"Then edit '{config_path}' to configure your cameras and proxy_host."
+            f"Then edit '{config_path}' to configure your cameras and proxy_server_ip."
         )
 
     with open(config_path, 'r') as f:
@@ -403,16 +422,27 @@ def load_camera_configs(config_path):
         raise RuntimeError("Invalid config: 'cameras' key missing or not a list")
     return data
 
+def run_flask_app_for_server(all_camera_configs):
+    app = create_onvif_proxy_server(all_camera_configs)
+    camera_configs = all_camera_configs.get('cameras', [])
+    proxy_server_ip = all_camera_configs.get('proxy_server_ip', '0.0.0.0')
+    proxy_server_port = all_camera_configs.get('proxy_server_port', 80)
+
+    logger.info(f"[ONVIF Proxy Server] Starting ONVIF Proxy server on http://{proxy_server_ip}:{proxy_server_port}")
+    logger.info(f"[ONVIF Proxy Server] Managing {len(camera_configs)} cameras.")
+
+    app.run(host=proxy_server_ip, port=proxy_server_port, threaded=True)
+                                             
 def run_flask_app_for_camera(camera_config, all_camera_configs):
     app = create_onvif_proxy_app(camera_config, all_camera_configs)
-    # Bind host comes from root-level proxy_host
-    if not isinstance(all_camera_configs, dict) or 'proxy_host' not in all_camera_configs:
-        raise RuntimeError('Configuration must provide a root-level "proxy_host" key')
-    bind_host = all_camera_configs.get('proxy_host')
+    # Bind host comes from root-level proxy_server_ip
+    if not isinstance(all_camera_configs, dict) or 'proxy_server_ip' not in all_camera_configs:
+        raise RuntimeError('Configuration must provide a root-level "proxy_server_ip" key')
+    bind_host = all_camera_configs.get('proxy_server_ip')
     port = camera_config['proxy_port']
     logger.info(f"[{camera_config['name']}] Starting ONVIF Proxy server on http://{bind_host}:{port}")
     logger.info(f"[{camera_config['name']}] Forwarding requests to camera at {camera_config['camera_host']}:{camera_config['camera_port']}")
-    app.run(host="0.0.0.0", port=port, threaded=True)
+    app.run(host=bind_host, port=port, threaded=True)
 
 if __name__ == '__main__':
     config_path = os.path.join(os.path.dirname(__file__), 'config', 'cameras.yaml')
@@ -422,17 +452,20 @@ if __name__ == '__main__':
     cfg['_file_lock'] = threading.Lock()
     camera_configs = cfg['cameras']
 
-    threads = []
+    main_thread = threading.Thread(target=run_flask_app_for_server, args=(cfg,), daemon=True)
+    main_thread.start()
+
+    camera_threads = []
     for cam_cfg in camera_configs:
         t = threading.Thread(target=run_flask_app_for_camera, args=(cam_cfg, cfg), daemon=True)
         # Attach thread object to config so status page can show if it's alive
         cam_cfg['_thread'] = t
         t.start()
-        threads.append(t)
+        camera_threads.append(t)
     # Keep main thread alive
     try:
         while True:
-            for t in threads:
+            for t in camera_threads:
                 t.join(1)
     except KeyboardInterrupt:
         print("Shutting down all ONVIF proxy servers...")

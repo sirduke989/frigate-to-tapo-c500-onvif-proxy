@@ -45,7 +45,7 @@ class ONVIFRequestModifier:
                     ONVIFHelpers.set_moving(camera_config)
 
             return etree.tostring(root)
-        elif operation == 'GoToPreset':
+        elif operation == 'GotoPreset':
             ONVIFHelpers.set_moving(camera_config)
 
             return etree.tostring(root)

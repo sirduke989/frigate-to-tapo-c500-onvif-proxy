@@ -122,12 +122,15 @@ def create_onvif_proxy_server(all_camera_configs):
 
         css = '''
         body { font-family: Arial, sans-serif; background: #f7f9fb; color: #222; }
+        body.dark-mode { background: #212121; color: #FAFAFA; }
         .container { max-width: 1100px; margin: 24px auto; }
         h1 { margin-bottom: 8px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
         .card { background: white; border: 1px solid #e1e6ea; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(16,24,40,0.03); }
+        body.dark-mode .card { background: #424242; border: 1px solid #757575; }
         .card h2 { margin: 0 0 8px 0; font-size: 18px; }
         .meta { font-size: 13px; color: #4b5563; margin-bottom: 8px; }
+        body.dark-mode .meta { color: #E0E0E0; }
         .example { margin-top: 15px; font-size: 15px; font-weight: bold; }
         .status { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
         .status.idle { background: #eef2ff; color: #4f46e5; }
@@ -135,7 +138,9 @@ def create_onvif_proxy_server(all_camera_configs):
         .status.running { background: #eef2ff; color: #4f46e5; }
         .status.stopped { background: #fff7ed; color: #b45309; }
         pre.snippet { background: #0b1220; color: #cbd5e1; padding: 12px; border-radius: 6px; overflow: auto; }
-        .footer { font-size: 13px; color: #6b7280; }
+        .header { font-size: 14px; margin-bottom: 12px; text-align: right;}
+        .footer { font-size: 13px; color: #E0E0E0; }
+        body.dark-mode .footer { color: #9ca3af; }
         '''
 
         cards = []
@@ -296,9 +301,80 @@ cameras:
             setInterval(pollStatus, 2000);
             // initial poll
             setTimeout(pollStatus, 500);
+
+            // Function to apply the selected theme
+            function applyTheme(themeName) {
+                const themeSelect = document.getElementById('theme-select');
+                const body = document.body;
+
+                if (themeName === 'dark') {
+                    body.classList.add('dark-mode');
+                } else if (themeName === 'light') {
+                    body.classList.remove('dark-mode');
+                } else if (themeName === 'system') {
+                    // Check user's OS preference
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    if (prefersDark) {
+                        body.classList.add('dark-mode');
+                    } else {
+                        body.classList.remove('dark-mode');
+                    }
+                }
+            }
+
+            // Function to save preference and apply theme
+            function setThemePreference(themeName) {
+                const themeSelect = document.getElementById('theme-select');
+                const STORAGE_KEY = 'theme-preference';
+
+                localStorage.setItem(STORAGE_KEY, themeName);
+                applyTheme(themeName);
+                themeSelect.value = themeName; // Update dropdown value if called from initialization
+            }
+
+            // Initialize theme on page load
+            window.onload = () => {
+                const themeSelect = document.getElementById('theme-select');
+                const body = document.body;
+                const STORAGE_KEY = 'theme-preference';
+
+                // 1. Check if a preference is saved in localStorage
+                const savedTheme = localStorage.getItem(STORAGE_KEY);
+
+                if (savedTheme) {
+                    // Use the saved preference
+                    applyTheme(savedTheme);
+                    themeSelect.value = savedTheme; // Sync dropdown to saved value
+                } else {
+                    // 2. If no preference saved, default to 'system' or 'light'
+                    // We can set the default saved preference to 'system'
+                    setThemePreference('system');
+                }
+
+                // Event listener for the dropdown change
+                themeSelect.addEventListener('change', (event) => {
+                    setThemePreference(event.target.value);
+                });
+            };
+
+            // Listen for OS theme changes if 'system' is currently active
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                if (localStorage.getItem(STORAGE_KEY) === 'system') {
+                    applyTheme('system'); // Re-apply system theme if OS changes
+                }
+            });
+
             </script>
         </head>
         <body>
+            <div class="header">
+                <label for="theme-select">Choose a theme:</label>
+                <select id="theme-select">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="system">System Default</option>
+                </select>
+            </div>
             <div class="container">
                 <h1>ONVIF Proxy Status</h1>
                 <p class="footer">Proxy host: <strong>__HOST__</strong></p>
